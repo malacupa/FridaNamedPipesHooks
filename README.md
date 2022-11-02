@@ -21,18 +21,18 @@ options:
 ```
 
 Example usage:
-![Example basic usage](https://github.com/malacupa/FridaNamedPipesHooks/blob/main/img/example-py.jpg?raw=true)
+![Example basic usage in Python](https://raw.githubusercontent.com/malacupa/FridaNamedPipesHooks/main/img/example-py.png)
 
 ## Usage - Advanced
 Use JavaScript instead of Python script. It is useful when debugging as Frida automatically reloads changes to JS file.
 
 ```
-# consider you many not have frida.exe in path, it may be e.g. here C:\Python311\Scripts\frida.exe
+# consider you may not have frida.exe in path, try e.g. here C:\Python311\Scripts\frida.exe
 PS > frida.exe --load .\pipeHooks.js --attach-pid <target pid>
 ```
 
 Example usage:
-![Example basic usage](https://github.com/malacupa/FridaNamedPipesHooks/blob/main/img/example-js.jpg?raw=true)
+![Example basic usage in JS](https://raw.githubusercontent.com/malacupa/FridaNamedPipesHooks/main/img/example-js.png)
 
 ## Installation
 You should have Python 3 and Frida installed. Install manually or use following steps (as admin):
@@ -48,20 +48,20 @@ choco install python
 py -m pip install frida frida-tools
 
 # download & unpack this repo
-Invoke-WebRequest https://github.com/malacupa/FridaNamedPipeHooks/archive/refs/heads/main.zip -outfile FridaNamedPipeHooks.zip
+Invoke-WebRequest https://github.com/malacupa/FridaNamedPipesHooks/archive/refs/heads/main.zip -OutFile FridaNamedPipeHooks.zip
 Expand-Archive FridaNamedPipeHooks.zip -DestinationPath C:\
 ```
 
 ## Limitations
 
   * When the process you connect to is not calling CreateNamedPipe API you will only see messages sent/received on handle and not readable name
-	* You can't hook lsass and similar as Frida runs in usermode and PPL processes can't be hooked from that perspective
-	* Sometimes you get access denied errors or won't be able to start Frida at all even if you run as SYSTEM and don't hook PPL, not sure why yet
+  * You can't hook lsass and similar as Frida runs in usermode and PPL processes can't be hooked from that perspective
+  * Sometimes you get access denied errors or won't be able to start Frida at all even if you run as SYSTEM and don't hook PPL, not sure why yet
 
 ## Alternative tools
 
   * [NamedPipeCapture](https://github.com/Vatyx/NamedPipeCapture). Uses Wireshark.
-	* [NpEtw](https://github.com/kobykahane/NpEtw). Uses unsigned kernel driver & allows viewing messages via ETW
-	* [API Monitor](http://www.rohitab.com/apimonitor). Allows you to hook selected functions similarly as Frida.
-	* [IO Ninja](https://ioninja.com/plugins/pipe-monitor.html). Nice GUI but named pipes features costs a little $$.
-	* [Mario & Luigi](https://github.com/OmerYa/Named-Pipe-Sniffer) ???
+  * [NpEtw](https://github.com/kobykahane/NpEtw). Uses unsigned kernel driver & allows viewing messages via ETW
+  * [API Monitor](http://www.rohitab.com/apimonitor). Allows you to hook selected functions similarly as Frida.
+  * [IO Ninja](https://ioninja.com/plugins/pipe-monitor.html). Nice GUI but named pipes features costs a little $$.
+  * [Mario & Luigi](https://github.com/OmerYa/Named-Pipe-Sniffer) ???
