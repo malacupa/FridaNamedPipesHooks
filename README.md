@@ -44,6 +44,10 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManage
 # install Python
 choco install python -y
 
+# remove aliases to `py` routed to Microsoft store placeholder EXEs 
+Remove-Item $env:LOCALAPPDATA\Microsoft\WindowsApps\python.exe
+Remove-Item $env:LOCALAPPDATA\Microsoft\WindowsApps\python3.exe
+
 # install Frida Python library and frida.exe
 py -m pip install frida frida-tools
 
