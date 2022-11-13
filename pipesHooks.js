@@ -3,7 +3,7 @@
 //--------------------------------------------
 const DEBUG = true;
 const COLORS = true;
-const OUTDIR = "C:\\FridaNamedPipesHooks\\pipe_files";
+const OUTDIR = "C:\\FridaNamedPipesHooks-main\\pipe_files";
 var createFileCalls = {};
 var readFileCalls = {};
 var createPipeCalls = {};
