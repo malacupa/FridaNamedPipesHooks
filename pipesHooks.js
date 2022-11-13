@@ -13,13 +13,26 @@ var handles = {};
 //--------------------------------------------
 //--------------------------------------------
 
+// logs in GMT+0 for some reason, hence using Python version
+function log(str) {
+    var date = new Date();
+    var year = date.getFullYear().toString().slice(-2);
+    var month = ("0" + (date.getMonth()+1)).slice(-2);
+    var day = ("0" + date.getDate()).slice(-2);
+    var hour = ("0" + date.getHours()).slice(-2);
+    var minute = ("0" + date.getMinutes()).slice(-2);
+    var secs = ("0" + date.getSeconds()).slice(-2);
+    var milis = ("00" + date.getMilliseconds()).slice(-3);
+    console.log(`${year}${month}${day}-${hour}:${minute}:${secs}.${milis} ${str}`);
+}
+
 function assignPipeHandle(handle, operation) {
     var fname = `${handle} (handle)`; // fallback to handle number at least
     if (handle in handles) {
         fname = handles[handle];
         if (fname.length < 9 || fname.substring(0, 9) != '\\\\.\\pipe\\')
         {
-            if (DEBUG) console.log(`Not a write to pipe, skipping ${operation} file ${fname}`);
+            if (DEBUG) log(`Not a write to pipe, skipping ${operation} file ${fname}`);
             return false;
         }
     }
@@ -55,19 +68,6 @@ function getNativeClass(obj) {
   if (typeof obj === "undefined") return "undefined";
   if (obj === null) return "null";
   return Object.prototype.toString.call(obj).match(/^\[object\s(.*)\]$/)[1];
-}
-
-// logs in GMT+0 for some reason, hence using Python version
-function log(str) {
-    var date = new Date();
-    var year = date.getFullYear().toString().slice(-2);
-    var month = ("0" + (date.getMonth()+1)).slice(-2);
-    var day = ("0" + date.getDate()).slice(-2);
-    var hour = ("0" + date.getHours()).slice(-2);
-    var minute = ("0" + date.getMinutes()).slice(-2);
-    var secs = ("0" + date.getSeconds()).slice(-2);
-    var milis = ("00" + date.getMilliseconds()).slice(-3);
-    console.log(`${year}${month}${day}-${hour}:${minute}:${secs}.${milis} ${str}`);
 }
 
 // Hook functions
