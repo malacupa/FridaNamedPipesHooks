@@ -4,8 +4,8 @@
 const DEBUG = true;
 const COLORS = true;
 const OUTDIR = "C:\\FridaNamedPipesHooks-main\\pipe_files";
+var createFileCalls = {};
 var readFileCalls = {};
-var createPipeCalls = {};
 
 const NtQueryObject = new NativeFunction(Module.getExportByName("Ntdll", 'NtQueryObject'), 'int', ['pointer', 'int', 'pointer', 'int', 'pointer']);
 const ObjectNameInformation = 1;
@@ -28,7 +28,6 @@ function log(str) {
 
 function assignPipeHandle(handle, operation) {
     var fname = `${handle} (handle)`; // fallback to handle number at least
-	
 	var type_info_buffer = Memory.alloc(500);
 	var res = NtQueryObject(ptr(handle), ObjectNameInformation, ptr(type_info_buffer), 500, Memory.alloc(8));
 	if (res == 0) {

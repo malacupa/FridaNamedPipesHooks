@@ -42,7 +42,11 @@ You should have Python 3 and Frida installed. Install manually or use following 
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 
 # install Python
-choco install python
+choco install python -y
+
+# remove aliases to `py` routed to Microsoft store placeholder EXEs 
+Remove-Item $env:LOCALAPPDATA\Microsoft\WindowsApps\python.exe
+Remove-Item $env:LOCALAPPDATA\Microsoft\WindowsApps\python3.exe
 
 # install Frida Python library and frida.exe
 py -m pip install frida frida-tools
