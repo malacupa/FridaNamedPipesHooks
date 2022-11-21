@@ -3,27 +3,43 @@
 //--------------------------------------------
 const DEBUG = true;
 const COLORS = true;
-const OUTDIR = "C:\\FridaNamedPipesHooks\\pipe_files";
-var createFileCalls = {};
+const OUTDIR = "C:\\FridaNamedPipesHooks-main\\pipe_files";
 var readFileCalls = {};
 var createPipeCalls = {};
-var handles = {};
 
+const NtQueryObject = new NativeFunction(Module.getExportByName("Ntdll", 'NtQueryObject'), 'int', ['pointer', 'int', 'pointer', 'int', 'pointer']);
+const ObjectNameInformation = 1;
 // Shared functions
 //--------------------------------------------
 //--------------------------------------------
 
+// logs in GMT+0 for some reason, hence using Python version
+function log(str) {
+    var date = new Date();
+    var year = date.getFullYear().toString().slice(-2);
+    var month = ("0" + (date.getMonth()+1)).slice(-2);
+    var day = ("0" + date.getDate()).slice(-2);
+    var hour = ("0" + date.getHours()).slice(-2);
+    var minute = ("0" + date.getMinutes()).slice(-2);
+    var secs = ("0" + date.getSeconds()).slice(-2);
+    var milis = ("00" + date.getMilliseconds()).slice(-3);
+    console.log(`${year}${month}${day}-${hour}:${minute}:${secs}.${milis} ${str}`);
+}
+
 function assignPipeHandle(handle, operation) {
     var fname = `${handle} (handle)`; // fallback to handle number at least
-    if (handle in handles) {
-        fname = handles[handle];
-        if (fname.length < 9 || fname.substring(0, 9) != '\\\\.\\pipe\\')
-        {
-            if (DEBUG) console.log(`Not a write to pipe, skipping ${operation} file ${fname}`);
-            return false;
-        }
-    }
-    return fname;
+	
+	var type_info_buffer = Memory.alloc(500);
+	var res = NtQueryObject(ptr(handle), ObjectNameInformation, ptr(type_info_buffer), 500, Memory.alloc(8));
+	if (res == 0) {
+		fname = type_info_buffer.add(16).readUtf16String();
+		if (fname.indexOf("\\Device\\NamedPipe\\LOCAL\\") != 0) {
+            if (DEBUG) log(`Not a pipe operation, skipping ${operation} file ${fname}`);
+			return false;
+		}
+		fname = fname.substr(24);
+	}
+	return fname;
 }
 
 function dumpAndPrint(msg, msgLen) {
@@ -57,41 +73,9 @@ function getNativeClass(obj) {
   return Object.prototype.toString.call(obj).match(/^\[object\s(.*)\]$/)[1];
 }
 
-// logs in GMT+0 for some reason, hence using Python version
-function log(str) {
-    var date = new Date();
-    var year = date.getFullYear().toString().slice(-2);
-    var month = ("0" + (date.getMonth()+1)).slice(-2);
-    var day = ("0" + date.getDate()).slice(-2);
-    var hour = ("0" + date.getHours()).slice(-2);
-    var minute = ("0" + date.getMinutes()).slice(-2);
-    var secs = ("0" + date.getSeconds()).slice(-2);
-    var milis = ("00" + date.getMilliseconds()).slice(-3);
-    console.log(`${year}${month}${day}-${hour}:${minute}:${secs}.${milis} ${str}`);
-}
-
 // Hook functions
 //--------------------------------------------
 //--------------------------------------------
-function createFileHookOnEnterVariant (variant) {
-    return function(args) {
-        if (variant[variant.length - 1] == "A") {
-            createFileCalls[this.threadId] = args[0].readCString();
-        } else {
-            createFileCalls[this.threadId] = args[0].readUtf16String();
-        }
-    };
-};
-function createFileHookOnLeaveVariant(variant) {
-    return function (retval) {
-        var fname = createFileCalls[this.threadId];
-        var handle = "0x" + retval.toInt32().toString(16);
-        if (DEBUG) log(`${variant}(lpFileName= ${fname}) handle= ${handle}`);
-        handles[handle] = fname;
-        // fyi the below line cannot be used because if you call both CreateFileA and CreateFileW you end up with same handle and this leads to wrong behavior as OnLeave for first function would delete handle but it would be missing in second OnLeave call
-        //delete createFileCalls[this.threadId];
-    };
-};
 
 
 function createNamedPipeHookOnEnterVariant(variant) {
@@ -146,7 +130,6 @@ function createNamedPipeHookOnLeaveVariant(variant) {
         } else {
             log(`New listening pipe:      ${fname}`);
         }
-        handles[handle] = fname;
     };
 };
 
@@ -193,14 +176,6 @@ function readFileHookOnLeaveVariant(variant) {
 //--------------------------------------------
 //--------------------------------------------
 log(`Storing long pipe messages to ${OUTDIR}`);
-
-["CreateFileA", "CreateFileW", "CreateFile2"].forEach(variant => {
-    Interceptor.attach(Module.getExportByName('kernel32.dll', variant), {
-        onEnter: createFileHookOnEnterVariant(variant),
-        onLeave: createFileHookOnLeaveVariant(variant)
-    });
-    if (DEBUG) log(`Hooked ${variant}`);
-});
 
 ["CreateNamedPipeA", "CreateNamedPipeW" ].forEach(variant => {
     Interceptor.attach(Module.getExportByName('kernel32.dll', variant), {

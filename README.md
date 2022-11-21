@@ -54,7 +54,6 @@ Expand-Archive FridaNamedPipeHooks.zip -DestinationPath C:\
 
 ## Limitations
 
-  * When the process you connect to is not calling CreateNamedPipe API you will only see messages sent/received on handle and not readable name
   * You can't hook lsass and similar as Frida runs in usermode and PPL processes can't be hooked from that perspective
   * Sometimes you get access denied errors or won't be able to start Frida at all even if you run as SYSTEM and don't hook PPL, not sure why yet
 
