@@ -4,16 +4,17 @@
 const DEBUG = true;
 const COLORS = true;
 const OUTDIR = "C:\\FridaNamedPipesHooks-main\\pipe_files";
-var createFileCalls = {};
-var readFileCalls = {};
+const ntdll = Process.getModuleByName('ntdll.dll');
 
-const NtQueryObject = new NativeFunction(Module.getExportByName("Ntdll", 'NtQueryObject'), 'int', ['pointer', 'int', 'pointer', 'int', 'pointer']);
+var ntReadFileCalls = {};
+
+const NtQueryObject = new NativeFunction(ntdll.getExportByName('NtQueryObject'), 'int', ['pointer', 'int', 'pointer', 'int', 'pointer']);
 const ObjectNameInformation = 1;
+
 // Shared functions
 //--------------------------------------------
 //--------------------------------------------
 
-// logs in GMT+0 for some reason, hence using Python version
 function log(str) {
     var date = new Date();
     var year = date.getFullYear().toString().slice(-2);
@@ -27,28 +28,42 @@ function log(str) {
 }
 
 function assignPipeHandle(handle, operation) {
-    var fname = `${handle} (handle)`; // fallback to handle number at least
-	var type_info_buffer = Memory.alloc(500);
-	var res = NtQueryObject(ptr(handle), ObjectNameInformation, ptr(type_info_buffer), 500, Memory.alloc(8));
-	if (res == 0) {
-		fname = type_info_buffer.add(16).readUtf16String();
-		if (fname.indexOf("\\Device\\NamedPipe\\LOCAL\\") != 0) {
+    var fname = `${handle} (handle)`; 
+    var type_info_buffer = Memory.alloc(1024);
+    var res = NtQueryObject(ptr(handle), ObjectNameInformation, ptr(type_info_buffer), 1024, Memory.alloc(Process.pointerSize));
+    if (res == 0) {
+        var length = type_info_buffer.readU16();
+        var bufferPtr = type_info_buffer.add(Process.pointerSize == 8 ? 8 : 4).readPointer();
+        if (bufferPtr.isNull()) return false;
+        fname = bufferPtr.readUtf16String(length / 2);
+        if (fname.indexOf("\\Device\\NamedPipe\\") != 0) {
             if (DEBUG) log(`Not a pipe operation, skipping ${operation} file ${fname}`);
-			return false;
-		}
-		fname = fname.substr(24);
-	}
-	return fname;
+            return false;
+        }
+        if (fname.indexOf("\\Device\\NamedPipe\\LOCAL\\") == 0) {
+            fname = fname.substr(24);
+        } else {
+            fname = fname.substr(18);
+        }
+    } else {
+        return false;
+    }
+    return fname;
 }
 
 function dumpAndPrint(msg, msgLen) {
+    if (msgLen <= 0) return "";
     var strDump;
     var dumpFileStamp = Date.now().toString();
     if (msgLen > 200) {
         var outFile = `${OUTDIR}\\${dumpFileStamp}.bin`;
         strDump = niceHexdump(msg) + `\n      Full message stored in file ${outFile}\n`;
         var file = new File(outFile, "wb");
-        file.write(msg.readByteArray(msgLen));
+        try {
+            file.write(msg.readByteArray(msgLen));
+        } catch (e) {
+            strDump += `\n      Error writing to file: ${e}\n`;
+        }
         file.close();
     } else {
         strDump = niceHexdump(msg, msgLen) + "\n";
@@ -61,141 +76,126 @@ function niceHexdump(buffer, length = 200) {
     if (length == 0) return "";
     const HEXD_OFFSET = "      ";
     const HEXD_OPTS = {offset: 0, length: length, header: true, ansi: COLORS};
-    return "\n" + HEXD_OFFSET + hexdump(buffer, HEXD_OPTS).replaceAll("\n", "\n"+HEXD_OFFSET);
-}
-
-// get type, useful when debugging Frida stuff
-// source: https://stackoverflow.com/questions/1249531/how-to-get-a-javascript-objects-class
-function getNativeClass(obj) {
-  if (typeof obj === "undefined") return "undefined";
-  if (obj === null) return "null";
-  return Object.prototype.toString.call(obj).match(/^\[object\s(.*)\]$/)[1];
+    try {
+        return "\n" + HEXD_OFFSET + hexdump(buffer, HEXD_OPTS).replaceAll("\n", "\n"+HEXD_OFFSET);
+    } catch (e) {
+        return `\n${HEXD_OFFSET}[Error reading memory at ${buffer}]`;
+    }
 }
 
 // Hook functions
 //--------------------------------------------
-//--------------------------------------------
 
+function hookNtWriteFile() {
+    Interceptor.attach(ntdll.getExportByName('NtWriteFile'), {
+        onEnter: function (args) {
+            var handle = args[0];
+            var lpBuffer = args[5];
+            var nNumberOfBytesToWrite = args[6].toInt32();
+            if (nNumberOfBytesToWrite <= 0) return;
 
-function createNamedPipeHookOnEnterVariant(variant) {
-    return function(args) {
-        var pipeName = variant[variant.length - 1] == "A" ? args[0].readCString() : args[0].readUtf16String();
-        createPipeCalls[this.threadId] = [pipeName, args[1], args[2], args[3], args[4], args[5], args[6]];
-        try {
-            // this is optional argument, may get exception
-            createPipeCalls[this.threadId] = createPipeCalls[this.threadId].concat([args[7]]);
-        } catch {}
-    };
+            var fname = assignPipeHandle(handle, "write to");
+            if (!fname) return;
+
+            var strDump = dumpAndPrint(lpBuffer, nNumberOfBytesToWrite);
+            if (DEBUG) {
+                log(`NtWriteFile(handle= ${handle}, fname= ${fname}, len= ${nNumberOfBytesToWrite})` + strDump);
+            } else {
+                log(`Sending message over:    ${fname}` + strDump);
+            }
+        }
+    });
 }
-function createNamedPipeHookOnLeaveVariant(variant) {
-    return function (retval) {
-        var args = createPipeCalls[this.threadId];
-        var fname = args[0];
-        var dwOpenMode = Number(args[1]);
-        var dwOpenModeStr = [];
-        if (dwOpenMode & 1) dwOpenModeStr.push("INBOUND");
-        if (dwOpenMode & 2) dwOpenModeStr.push("OUTBOUND");
-        if (dwOpenMode & 3) dwOpenModeStr.push("DUPLEX");
-        if (dwOpenMode & 0x00080000) dwOpenModeStr.push("FIRST_PIPE_INSTANCE");
-        if (dwOpenMode & 0x80000000) dwOpenModeStr.push("WRITE_THROUGH");
-        if (dwOpenMode & 0x40000000) dwOpenModeStr.push("OVERLAPPED");
-        if (dwOpenMode & 0x40000) dwOpenModeStr.push("WRITE_DAC");
-        if (dwOpenMode & 0x80000) dwOpenModeStr.push("WRITE_OWNER");
-        if (dwOpenMode & 0x1000000) dwOpenModeStr.push("ACCESS_SYSTEM_SECURITY");
-        dwOpenModeStr = dwOpenModeStr.join(" | ")
-        
-        var dwPipeMode = Number(args[2]);
-        var dwPipeModeStr = [];
-        if (dwPipeMode == 0) {
-            dwPipeModeStr.push("TYPE_BYTE");
-            dwPipeModeStr.push("READMODE_BYTE");
-            dwPipeModeStr.push("PIPE_WAIT");
-            dwPipeModeStr.push("ACCEPT_REMOTE_CLIENTS");
-        }
-        if (dwPipeMode & 4) dwPipeModeStr.push("TYPE_MESSAGE");
-        if (dwPipeMode & 2) dwPipeModeStr.push("READMODE_MESSAGE");
-        if (dwPipeMode & 1) dwPipeModeStr.push("NOWAIT");
-        if (dwPipeMode & 8) dwPipeModeStr.push("REJECT_REMOTE_CLIENTS");
-        dwPipeModeStr = dwPipeModeStr.join(" | ")
-        
-        var nMaxInstancesStr = Number(args[3]) == 255 ? "UNLIMITED" : args[3];
-        
-        var securityAttributes = args.length > 6 ? args[6] : "null";
-        var handle = "0x" + retval.toInt32().toString(16);
-        if (DEBUG) {
-            log(
-                `${variant}(lpFileName= ${fname}, dwOpenMode= ${dwOpenModeStr}, dwPipeMode= ${dwPipeModeStr}, nMaxInstances= ${nMaxInstancesStr}, nOutBufferSize= ${args[4]}, nInBufferSize= ${args[5]}, nDefaultTimeOut= ${args[6]}, lpSecurityAttributes= ${securityAttributes}) handle= ${handle}`
-            );
-        } else {
-            log(`New listening pipe:      ${fname}`);
-        }
-    };
-};
 
-function writeFileHookOnEnterVariant(variant) {
-    return function(args) {
-        var handle = args[0];
-        var lpBuffer = args[1];
-        var nNumberOfBytesToWrite = Number(args[2]);
-        var fname = assignPipeHandle(handle, "write to");
-        if ( !fname) return;
-        
-        var strDump = dumpAndPrint(lpBuffer, nNumberOfBytesToWrite);
-        if (DEBUG) {
-            log(`${variant}(fname= ${fname}, nNumberOfBytesToWrite= ${nNumberOfBytesToWrite}, lpBuffer= ${lpBuffer}` + strDump);
-        } else {
-            log(`Sending message over:    ${fname}` + strDump);
-        }
-    }
-};
+function hookNtReadFile() {
+    Interceptor.attach(ntdll.getExportByName('NtReadFile'), {
+        onEnter: function (args) {
+            this.handle = args[0];
+            this.ioStatusBlock = args[4];
+            this.buffer = args[5];
+        },
+        onLeave: function (retval) {
+            var status = retval.toInt32();
+            if (status !== 0) return; // STATUS_SUCCESS
 
-function readFileHookOnEnterVariant(variant) {
-    return function (args) {
-        readFileCalls[this.threadId] = [args[0], args[1], args[3]];
-    };
-};
-function readFileHookOnLeaveVariant(variant) {
-    return function (retval) {
-        var handle = readFileCalls[this.threadId][0];
-        var lpBuffer = readFileCalls[this.threadId][1];
-        var lpNumberOfBytesRead = readFileCalls[this.threadId][2].readU32();
-        var fname = assignPipeHandle(handle, "read from");
-        if ( !fname) return;
-        
-        var strDump = dumpAndPrint(lpBuffer, lpNumberOfBytesRead);
-        if (DEBUG) {
-            log(`${variant}(fileName= ${fname}, read= ${lpNumberOfBytesRead})` + strDump);
-        } else {
-            log(`Receiving message over:  ${fname}` + strDump);
+            var handle = this.handle;
+            var ioStatusBlock = this.ioStatusBlock;
+            var lpBuffer = this.buffer;
+
+            // Information field in IO_STATUS_BLOCK contains bytes read
+            var numberOfBytesRead = ioStatusBlock.add(Process.pointerSize).readPointer().toUInt32();
+            if (numberOfBytesRead <= 0) return;
+
+            var fname = assignPipeHandle(handle, "read from");
+            if (!fname) return;
+
+            var strDump = dumpAndPrint(lpBuffer, numberOfBytesRead);
+            if (DEBUG) {
+                log(`NtReadFile(handle= ${handle}, fileName= ${fname}, read= ${numberOfBytesRead})` + strDump);
+            } else {
+                log(`Receiving message over:  ${fname}` + strDump);
+            }
         }
-    };
-};
+    });
+}
+
+function hookNtCreateNamedPipeFile() {
+    Interceptor.attach(ntdll.getExportByName('NtCreateNamedPipeFile'), {
+        onEnter: function (args) {
+            var objectAttributes = args[2];
+            var objectNamePtr = objectAttributes.add(Process.pointerSize * 2).readPointer();
+            var pipeName = "Unknown";
+            if (!objectNamePtr.isNull()) {
+                var length = objectNamePtr.readU16();
+                var buffer = objectNamePtr.add(Process.pointerSize == 8 ? 8 : 4).readPointer();
+                pipeName = buffer.readUtf16String(length / 2);
+            }
+            this.pipeName = pipeName;
+            this.handlePtr = args[0];
+        },
+        onLeave: function (retval) {
+            if (retval.toInt32() === 0) {
+                var handle = this.handlePtr.readPointer();
+                log(`New listening pipe (NtCreateNamedPipeFile): ${this.pipeName} (handle: ${handle})`);
+            }
+        }
+    });
+}
+
+function hookNtCreateFile() {
+    Interceptor.attach(ntdll.getExportByName('NtCreateFile'), {
+        onEnter: function (args) {
+            var objectAttributes = args[2];
+            var objectNamePtr = objectAttributes.add(Process.pointerSize * 2).readPointer();
+            var name = "Unknown";
+            if (!objectNamePtr.isNull()) {
+                var length = objectNamePtr.readU16();
+                var buffer = objectNamePtr.add(Process.pointerSize == 8 ? 8 : 4).readPointer();
+                name = buffer.readUtf16String(length / 2);
+            }
+            if (name.indexOf("\\Device\\NamedPipe\\") == 0) {
+                this.isPipe = true;
+                this.pipeName = name;
+                this.handlePtr = args[0];
+            }
+        },
+        onLeave: function (retval) {
+            if (this.isPipe && retval.toInt32() === 0) {
+                var handle = this.handlePtr.readPointer();
+                log(`Opened pipe (NtCreateFile): ${this.pipeName} (handle: ${handle})`);
+            }
+        }
+    });
+}
 
 // Main
 //--------------------------------------------
 //--------------------------------------------
 log(`Storing long pipe messages to ${OUTDIR}`);
 
-["CreateNamedPipeA", "CreateNamedPipeW" ].forEach(variant => {
-    Interceptor.attach(Module.getExportByName('kernel32.dll', variant), {
-        onEnter: createNamedPipeHookOnEnterVariant(variant),
-        onLeave: createNamedPipeHookOnLeaveVariant(variant)
-    });
-    if (DEBUG) log(`Hooked ${variant}`);
-});
+hookNtCreateNamedPipeFile();
+hookNtCreateFile();
+hookNtWriteFile();
+hookNtReadFile();
 
-["WriteFile", "WriteFileEx"].forEach(variant => {
-    Interceptor.attach(Module.getExportByName('kernel32.dll', variant), {
-        onEnter: writeFileHookOnEnterVariant(variant)
-    });
-    if (DEBUG) log(`Hooked ${variant}`);
-});
-
-["ReadFile", "ReadFileEx"].forEach(variant => {
-    Interceptor.attach(Module.getExportByName('kernel32.dll', variant), {
-        onEnter: readFileHookOnEnterVariant(variant),
-        onLeave: readFileHookOnLeaveVariant(variant)
-    });
-    if (DEBUG) log(`Hooked ${variant}`);
-});
 log("Everything hooked now");
