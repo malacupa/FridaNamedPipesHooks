@@ -63,6 +63,10 @@ Expand-Archive FridaNamedPipeHooks.zip -DestinationPath C:\
 
 ## Alternative tools
 
+  * [Thats no pipe](https://github.com/synacktiv/thats_no_pipe): Frida+Burp, converts pipe messages to websocket messages you can play with in Burp
+  * [pipe-intercept](https://github.com/gabriel-sztejnworcel/pipe-intercept): similar to above without Frida, to capture/play with messages in Burp/similar websocket proxy
+  * [pipetap](https://github.com/sensepost/pipetap): C++, injects DLLs into pipe processes, has own GUI to view/modify
+  * [NamedPipeMaster](https://github.com/zeze-zeze/NamedPipeMaster): C++, injects DLLs into pipe processes, save data to DB etc.
   * [NamedPipeCapture](https://github.com/Vatyx/NamedPipeCapture). Uses Wireshark.
   * [NpEtw](https://github.com/kobykahane/NpEtw). Uses unsigned kernel driver & allows viewing messages via ETW
   * [API Monitor](http://www.rohitab.com/apimonitor). Allows you to hook selected functions similarly as Frida.
